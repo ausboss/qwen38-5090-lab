@@ -1,0 +1,58 @@
+{
+  "label": "llamacpp-big",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.821,
+      "decode_tps_per_stream": 73.3,
+      "decode_tps_aggregate": 219.4,
+      "prefill_tps": 1248.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.119,
+      "decode_tps_per_stream": 72.5,
+      "decode_tps_aggregate": 216.3,
+      "prefill_tps": 8620.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 53.052,
+      "decode_tps_per_stream": 52.2,
+      "decode_tps_aggregate": 158.1,
+      "prefill_tps": 1930.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.214,
+      "decode_tps_per_stream": 52.0,
+      "decode_tps_aggregate": 156.5,
+      "prefill_tps": 478184.0,
+      "tokens_returned": 768,
+      "errors": []
+    }
+  ]
+}

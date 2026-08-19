@@ -1,0 +1,32 @@
+{
+  "label": "mtp1",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.122,
+      "decode_tps_per_stream": 56.5,
+      "decode_tps_aggregate": 170.0,
+      "prefill_tps": 8392.0,
+      "tokens_returned": 394,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.047,
+      "decode_tps_per_stream": 55.9,
+      "decode_tps_aggregate": 166.7,
+      "prefill_tps": 21631.0,
+      "tokens_returned": 389,
+      "errors": []
+    }
+  ]
+}

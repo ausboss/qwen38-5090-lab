@@ -1,0 +1,58 @@
+{
+  "label": "ctx200",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 2,
+      "ttft_s": 0.114,
+      "decode_tps_per_stream": 64.0,
+      "decode_tps_aggregate": 128.0,
+      "prefill_tps": 8967.0,
+      "tokens_returned": 512,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 2,
+      "ttft_s": 0.107,
+      "decode_tps_per_stream": 63.8,
+      "decode_tps_aggregate": 127.5,
+      "prefill_tps": 9566.0,
+      "tokens_returned": 512,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 2,
+      "ttft_s": 24.754,
+      "decode_tps_per_stream": 54.7,
+      "decode_tps_aggregate": 109.5,
+      "prefill_tps": 4137.0,
+      "tokens_returned": 512,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 2,
+      "ttft_s": 12.528,
+      "decode_tps_per_stream": 55.3,
+      "decode_tps_aggregate": 110.5,
+      "prefill_tps": 8174.0,
+      "tokens_returned": 512,
+      "errors": []
+    }
+  ]
+}

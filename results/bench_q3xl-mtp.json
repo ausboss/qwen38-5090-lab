@@ -1,0 +1,58 @@
+{
+  "label": "q3xl-mtp",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.7,
+      "decode_tps_per_stream": 153.0,
+      "decode_tps_aggregate": 459.9,
+      "prefill_tps": 1463.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.116,
+      "decode_tps_per_stream": 146.4,
+      "decode_tps_aggregate": 441.0,
+      "prefill_tps": 8828.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 48.854,
+      "decode_tps_per_stream": 79.8,
+      "decode_tps_aggregate": 237.6,
+      "prefill_tps": 2096.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.446,
+      "decode_tps_per_stream": 77.9,
+      "decode_tps_aggregate": 233.5,
+      "prefill_tps": 229454.0,
+      "tokens_returned": 768,
+      "errors": []
+    }
+  ]
+}

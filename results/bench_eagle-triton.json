@@ -1,0 +1,32 @@
+{
+  "label": "eagle-triton",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.129,
+      "decode_tps_per_stream": 47.0,
+      "decode_tps_aggregate": 140.9,
+      "prefill_tps": 7945.0,
+      "tokens_returned": 213,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.056,
+      "decode_tps_per_stream": 48.1,
+      "decode_tps_aggregate": 144.3,
+      "prefill_tps": 18318.0,
+      "tokens_returned": 200,
+      "errors": []
+    }
+  ]
+}

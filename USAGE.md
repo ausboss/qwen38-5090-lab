@@ -1,0 +1,326 @@
+# Running Qwen3.8-27B locally — the practical guide
+
+This is the plain-English version. [REPORT.md](REPORT.md) has the benchmark
+detail if you ever want it.
+
+## The short version
+
+```bash
+qwen          # start the fast setup
+qwen ui       # start it + open the chat page
+qwen stop     # stop everything
+qwen status   # what's running
+qwen test     # verify chat + images work
+```
+
+That's it. `qwen` works from any directory.
+
+- **Chat page:** http://127.0.0.1:8080 (Open WebUI — already installed here)
+- **API endpoint** for ComfyUI or scripts: `http://127.0.0.1:30001/v1`
+  - model name: `qwen38-fast`
+  - API key: anything at all, it isn't checked
+
+### Making room for a big ComfyUI model
+
+Two things hold GPU memory, and you need both to let go:
+
+```bash
+qwen unload     # stops the LLM AND tells ComfyUI to drop its models
+                # -> frees ~26GB. The chat page stays open.
+qwen load       # bring the model back when you're done
+```
+
+`qwen unload` deliberately leaves Open WebUI and ComfyUI **running** — so if you
+just had the model write you an image prompt, you can still read and copy it
+while the GPU is free.
+
+Measured round trip: 9.8GB free → **29.2GB free** → back to 9.8GB, chat intact.
+
+Related:
+
+| command | what it does |
+|---|---|
+| `qwen gpu` | who is holding VRAM right now, per process |
+| `qwen free` | only make ComfyUI drop its models (LLM untouched) |
+| `qwen stop` | stop the model only — web UI keeps running |
+| `qwen down` | stop the model *and* the web UI |
+| `qwen reload` | restart the model |
+
+**ComfyUI caches models after every generation.** That's the usual reason the LLM
+suddenly refuses to start: ComfyUI is silently sitting on 18GB. `qwen gpu` shows
+it, `qwen free` fixes it.
+
+### The uncensored builds
+
+```bash
+qwen uncfast        # or: qwen uf   — fast one, 131K context, ComfyUI still fits
+qwen uncensored     # or: qwen unc  — best fidelity, 98K context, no room for ComfyUI
+```
+
+| | `uncfast` | `uncensored` |
+|---|---|---|
+| build | mradermacher Q4_K_S | JonathanColetti Q6_K |
+| weights | 15.8 GB | 22.4 GB |
+| **decode** | **132.4 tok/s** | 115.6 tok/s |
+| context | **131,072** | 98,304 |
+| draft acceptance | 0.703 | **0.819** |
+| VRAM left over | **7.4 GB** (ComfyUI fits) | 2.6 GB (it doesn't) |
+| reasoning probe | 8/8 | 8/8 |
+| engaged with legit prompts | 6/6 | 6/6 |
+
+**Use `uncfast` by default.** It's faster, has the full context, and leaves room
+for image generation. Reach for `uncensored` (Q6_K) when output quality matters
+more than speed — its higher draft acceptance and quantization fidelity make it
+the better of the two for careful work, which is also what the build's own author
+recommends for behavioural evaluation.
+
+### Careful: most uncensored builds are silently broken here
+
+Of the four uncensored Qwen3.8-27B GGUFs on this machine, **three have the MTP
+draft head stripped** — they run ~40% slower and nothing warns you:
+
+| build | MTP |
+|---|---|
+| mradermacher Uncensored-Aggressive Q4_K_S | present |
+| JonathanColetti Uncensored Q6_K | present |
+| 0bserverx Heretic-Abliterated Q4_K_M | **missing** |
+| chimingw AEON-ULTIMATE Q6_K | **missing** |
+| JonathanColetti `noMTP-*` (whole family) | **missing, by design** |
+
+Abliteration re-saves the model through transformers, which drops the `mtp.*`
+tensors while `config.json` still advertises them. Check any GGUF before
+committing to it:
+
+```bash
+bin/gguf-inspect.py /path/to/model.gguf
+```
+
+It reports the head, the quant mix, and the predicted tok/s. The tell is
+`blocks=65, nextn layers=1` (good) versus `blocks=64, nextn layers=None` (head
+stripped).
+
+`JonathanColetti/Qwen3.8-27B-Uncensored` Q6_K — abliterated, but with the MTP
+draft head grafted back in (most decensored builds lose it, because re-saving
+through transformers drops the `mtp.*` tensors while config.json still claims
+they exist). Verified present with `bin/gguf-inspect.py` before trusting it.
+
+Measured here: **115.6 tok/s**, 98K context, vision working, 8/8 on the same
+reasoning probe the base model passes, and it engaged with 6/6 legitimate
+creative/educational prompts.
+
+Two things worth knowing:
+
+- **It's 22.4 GB, so only ~2.6 GB is left.** ComfyUI image generation will not
+  fit alongside it. Run `qwen free` first, or use plain `qwen` for image work.
+- **Context is 98K, not 131K** — the weights don't leave room for a bigger KV
+  pool. Still well past 64K.
+
+The sibling `noMTP` files in that repo have the draft head **stripped**
+(`nextn_predict_layers` absent, 64 blocks instead of 65). They run ~40% slower.
+Don't grab one by accident — `bin/gguf-inspect.py <file>` tells you in one line.
+
+### Two setups, and when to use each
+
+| | `qwen` (default) | `qwen long` |
+|---|---|---|
+| runtime | llama.cpp | SGLang |
+| speed, short chat | **153 tok/s** | 65 tok/s |
+| speed at 100K | **80 tok/s** | 55 tok/s |
+| context | 131K | 184K |
+| first reply to a **fresh** 100K doc | 49 s | **25 s** |
+| port / model | 30001 / `qwen38-fast` | 30000 / `qwen38` |
+
+**Use `qwen` for almost everything** — it's 2.4× faster to type out. Only reach
+for `qwen long` if you repeatedly paste *brand new* 100K documents and the 25s
+vs 49s first-token wait matters. Once a document is cached both are instant.
+
+## How this differs from LM Studio
+
+LM Studio is one app that does both jobs: it runs the model *and* gives you the
+chat window. Here those are two separate pieces:
+
+| | LM Studio | This setup |
+|---|---|---|
+| runs the model | LM Studio | `qwen` (SGLang) |
+| chat window | LM Studio | Open WebUI (`qwen ui`) |
+| API for ComfyUI | LM Studio's server toggle | always on at port 30000 |
+
+The upside of the split: the API endpoint is always available whether or not
+you have a chat window open, and you get ~160K of context instead of what
+LM Studio typically gives you on this model.
+
+## What's configured in Open WebUI
+
+Set up and verified on 2026-08-19. Re-apply any time with:
+
+```bash
+pkill -f "open_webui|open-webui serve"; sleep 5
+python3 bin/webui-configure.py
+open-webui serve --port 8080 &
+```
+
+| feature | what you get |
+|---|---|
+| **Image generation** | ComfyUI + Z-Image Turbo, ~10s per 1024×1024. Toggle the image button in the chat input. |
+| **Web search** | DuckDuckGo, no API key, no account |
+| **Built-in tools** | search_web, fetch_url, execute_code, generate_image, memory, notes, calendar — on by default |
+| **Code interpreter** | Python in your browser (Pyodide), nothing to install |
+| **Long chats** | auto-compaction past 100K tokens instead of falling off a cliff |
+| **Documents** | hybrid BM25 + vector search, OCR for scanned PDFs, all local/CPU |
+| **10 slash-prompts** | `/rootcause` `/review` `/vram` `/comfy` `/shorter` `/eli5` `/steelman` `/checkit` `/bash` `/summarise` |
+
+**The `qwen38-task` preset** is internal — it handles chat titles and tags with
+thinking disabled. Measured 112 → 12 tokens for the same title, identical result.
+Don't pick it for chat; it's wired up automatically.
+
+> **Note:** your live database is inside the uv tool install, **not**
+> `~/.open-webui/webui.db` — that path is a stale leftover from an older launch
+> method and editing it does nothing. Backups are in `~/.open-webui-backups/`.
+
+## First-time Open WebUI setup (one minute, once)
+
+Run `qwen ui`, then in the browser:
+
+1. **Settings → Admin Settings → Connections → OpenAI API → +**
+2. URL: `http://127.0.0.1:30000/v1`
+3. Key: `local` (any text works)
+4. Save, reload the page. `qwen38` now appears in the model dropdown.
+
+I deliberately did **not** auto-configure this — you have an existing
+Open WebUI database and forcing settings via environment variables would have
+overwritten your connections and could have disabled your login.
+
+## System prompts
+
+- **For one chat:** the **Controls** panel (top-right in Open WebUI) → System Prompt.
+- **For everything:** Settings → General → System Prompt.
+- **From code:** just a normal `system` message —
+
+```python
+messages = [
+    {"role": "system", "content": "You are a terse assistant."},
+    {"role": "user",   "content": "What is the capital of Japan?"},
+]
+```
+
+## Thinking levels
+
+```bash
+qwen think off     # no <think> block at all
+qwen think 128     # hard cap: think at most ~128 tokens
+qwen think low     # told to keep it brief
+qwen think on      # default
+qwen think long    # no guidance — rambles most (see below)
+```
+
+Restarts whichever model is loaded (~1 min) and applies to everything after.
+Run `qwen think` with no argument to see this table.
+
+### Measured on this machine
+
+Same multi-step word problem each time, counting words inside `<think>`:
+
+| level | thinking | total output | mechanism |
+|---|---|---|---|
+| `off` | **0w** | 926 tok | `--reasoning off` |
+| `128` | **69w** | 356 tok | `--reasoning-budget 128` |
+| `low` | 227w | 757 tok | `reasoning_effort=low` |
+| `on` | 271w | 978 tok | template default (`xhigh`) |
+| `long` | **435w** | 1264 tok | `reasoning_effort=medium` |
+
+**A numeric budget is the best control** — it's the only true hard cap that still
+lets the model think. At 128 it used 69 words and still got the answer right,
+cutting total output by 64%.
+
+**`long` is not a typo.** It maps to the template's `reasoning_effort=medium`,
+which injects *no instruction at all*, so the model rambles more than when told
+to "think carefully" (`xhigh`, the default). The template's own names are
+misleading; the levels above are named for what they actually do.
+
+**`off` isn't automatically faster.** On an easy question it's a big win. On a
+hard one the model reasons in the visible answer instead — total output can grow.
+It changes *where* the reasoning goes, not always how much. A numeric budget
+avoids this.
+
+### Per-request, without restarting
+
+Works on the llama.cpp builds (`qwen`, `qwen uncfast`, `qwen uncensored`):
+
+```json
+{ "chat_template_kwargs": {"reasoning_effort": "low"} }
+{ "chat_template_kwargs": {"enable_thinking": false} }
+```
+
+Put either in an Open WebUI preset's params to get per-profile thinking levels.
+Note the top-level `reasoning_effort` field and per-request `reasoning_budget`
+are both **ignored** — only the two forms above work.
+
+> **On the SGLang path (`qwen long`) only `off` works.** SGLang inspects the chat
+> template at boot, decides this model has no effort control (`effort_kwarg=None`
+> in its log) and never forwards the value. The llama.cpp builds pass kwargs
+> straight into the Jinja template, which is why the levels work there.
+
+## Images
+
+Images work — just paste or attach one in Open WebUI, or send it the standard
+OpenAI way:
+
+```json
+{"role": "user", "content": [
+  {"type": "text", "text": "What's in this picture?"},
+  {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+]}
+```
+
+Verified working: `qwen test` sends a picture of a red circle and the number 42
+and checks the model reads both back.
+
+## Using it from ComfyUI or your own scripts
+
+Anywhere that asks for an "OpenAI-compatible" endpoint:
+
+```
+Base URL : http://127.0.0.1:30000/v1
+API key  : local
+Model    : qwen38
+```
+
+Python example:
+
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:30000/v1", api_key="local")
+r = client.chat.completions.create(
+    model="qwen38",
+    messages=[{"role": "user", "content": "hello"}],
+)
+print(r.choices[0].message.content)
+```
+
+## Things that will otherwise confuse you
+
+- **The first message after starting is slow** (~40s). That's a one-time GPU
+  warmup. `qwen` now burns it during startup, so you shouldn't see it — but if
+  you start the server some other way, that's what it is.
+- **Pasting a huge document takes ~25 seconds** before the reply starts. Reading
+  100K tokens genuinely takes that long. *Follow-up questions about the same
+  document are instant* (~0.5s) because it's cached. So paste once, then ask
+  many questions — don't re-paste.
+- **ComfyUI and this can't both run.** ComfyUI wants ~12 GB of VRAM and this
+  uses nearly all 32 GB. Run `qwen stop` before starting ComfyUI, and vice
+  versa. (If you'd rather keep some room free, `qwen safe` uses ~2 GB less at
+  the cost of context.)
+- **Short answers may look truncated** if you set a low `max_tokens` — the
+  thinking counts against it. Give it at least ~800.
+
+## Commands
+
+| command | what it does |
+|---|---|
+| `qwen` | start the model (images on, ~160K context) |
+| `qwen safe` | start with ~2 GB GPU left free for other apps |
+| `qwen ui` | start model + Open WebUI chat page |
+| `qwen stop` | stop model and web UI |
+| `qwen status` | what's up, how much context, GPU usage |
+| `qwen think <level>` | xhigh / medium / low / off |
+| `qwen test` | verify chat, memory, and images all work |

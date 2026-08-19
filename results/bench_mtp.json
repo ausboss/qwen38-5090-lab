@@ -1,0 +1,58 @@
+{
+  "label": "mtp",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.126,
+      "decode_tps_per_stream": 50.3,
+      "decode_tps_aggregate": 150.5,
+      "prefill_tps": 8135.0,
+      "tokens_returned": 284,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.048,
+      "decode_tps_per_stream": 51.6,
+      "decode_tps_aggregate": 153.9,
+      "prefill_tps": 21307.0,
+      "tokens_returned": 247,
+      "errors": []
+    },
+    {
+      "depth": 8192,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.842,
+      "decode_tps_per_stream": 50.5,
+      "decode_tps_aggregate": 151.4,
+      "prefill_tps": 9730.0,
+      "tokens_returned": 261,
+      "errors": []
+    },
+    {
+      "depth": 8192,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.054,
+      "decode_tps_per_stream": 48.6,
+      "decode_tps_aggregate": 145.7,
+      "prefill_tps": 152085.0,
+      "tokens_returned": 252,
+      "errors": []
+    }
+  ]
+}

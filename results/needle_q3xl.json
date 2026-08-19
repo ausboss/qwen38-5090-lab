@@ -1,0 +1,106 @@
+{
+  "label": "q3xl",
+  "passed": 9,
+  "total": 9,
+  "cells": [
+    {
+      "depth": 8192,
+      "position": 0.1,
+      "tokens": 8221,
+      "expected": "745348",
+      "answer_codes": [
+        "745348"
+      ],
+      "pass": true,
+      "latency_s": 4.9
+    },
+    {
+      "depth": 8192,
+      "position": 0.5,
+      "tokens": 8220,
+      "expected": "336948",
+      "answer_codes": [
+        "336948"
+      ],
+      "pass": true,
+      "latency_s": 3.6
+    },
+    {
+      "depth": 8192,
+      "position": 0.9,
+      "tokens": 8220,
+      "expected": "828548",
+      "answer_codes": [
+        "828548"
+      ],
+      "pass": true,
+      "latency_s": 3.6
+    },
+    {
+      "depth": 32768,
+      "position": 0.1,
+      "tokens": 32797,
+      "expected": "962692",
+      "answer_codes": [
+        "962692"
+      ],
+      "pass": true,
+      "latency_s": 12.0
+    },
+    {
+      "depth": 32768,
+      "position": 0.5,
+      "tokens": 32797,
+      "expected": "554292",
+      "answer_codes": [
+        "554292"
+      ],
+      "pass": true,
+      "latency_s": 10.7
+    },
+    {
+      "depth": 32768,
+      "position": 0.9,
+      "tokens": 32797,
+      "expected": "145892",
+      "answer_codes": [
+        "145892"
+      ],
+      "pass": true,
+      "latency_s": 12.1
+    },
+    {
+      "depth": 102400,
+      "position": 0.1,
+      "tokens": 102429,
+      "expected": "678500",
+      "answer_codes": [
+        "678500"
+      ],
+      "pass": true,
+      "latency_s": 49.0
+    },
+    {
+      "depth": 102400,
+      "position": 0.5,
+      "tokens": 102429,
+      "expected": "270100",
+      "answer_codes": [
+        "270100"
+      ],
+      "pass": true,
+      "latency_s": 50.3
+    },
+    {
+      "depth": 102400,
+      "position": 0.9,
+      "tokens": 102429,
+      "expected": "761700",
+      "answer_codes": [
+        "761700"
+      ],
+      "pass": true,
+      "latency_s": 50.2
+    }
+  ]
+}

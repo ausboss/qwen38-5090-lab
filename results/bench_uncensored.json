@@ -1,0 +1,32 @@
+{
+  "label": "uncensored",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.808,
+      "decode_tps_per_stream": 115.6,
+      "decode_tps_aggregate": 346.1,
+      "prefill_tps": 1267.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.126,
+      "decode_tps_per_stream": 116.3,
+      "decode_tps_aggregate": 349.8,
+      "prefill_tps": 8099.0,
+      "tokens_returned": 768,
+      "errors": []
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "label": "eagle",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.126,
+      "decode_tps_per_stream": 51.5,
+      "decode_tps_aggregate": 154.8,
+      "prefill_tps": 8120.0,
+      "tokens_returned": 214,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.047,
+      "decode_tps_per_stream": 51.9,
+      "decode_tps_aggregate": 156.1,
+      "prefill_tps": 21640.0,
+      "tokens_returned": 212,
+      "errors": []
+    }
+  ]
+}

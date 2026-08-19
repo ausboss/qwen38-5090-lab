@@ -1,0 +1,84 @@
+{
+  "label": "ctx128",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.115,
+      "decode_tps_per_stream": 64.8,
+      "decode_tps_aggregate": 193.7,
+      "prefill_tps": 8920.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.095,
+      "decode_tps_per_stream": 65.2,
+      "decode_tps_aggregate": 195.4,
+      "prefill_tps": 10745.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 32768,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 4.428,
+      "decode_tps_per_stream": 61.1,
+      "decode_tps_aggregate": 183.2,
+      "prefill_tps": 7401.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 32768,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.18,
+      "decode_tps_per_stream": 60.2,
+      "decode_tps_aggregate": 180.5,
+      "prefill_tps": 182094.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 24.568,
+      "decode_tps_per_stream": 55.2,
+      "decode_tps_aggregate": 165.5,
+      "prefill_tps": 4168.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 102400,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.537,
+      "decode_tps_per_stream": 53.6,
+      "decode_tps_aggregate": 160.5,
+      "prefill_tps": 190741.0,
+      "tokens_returned": 768,
+      "errors": []
+    }
+  ]
+}

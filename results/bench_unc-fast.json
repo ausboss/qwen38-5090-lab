@@ -1,0 +1,32 @@
+{
+  "label": "unc-fast",
+  "gen_tokens": 256,
+  "cases": [
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": true,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.727,
+      "decode_tps_per_stream": 132.4,
+      "decode_tps_aggregate": 395.1,
+      "prefill_tps": 1409.0,
+      "tokens_returned": 768,
+      "errors": []
+    },
+    {
+      "depth": 1024,
+      "concurrency": 1,
+      "cold": false,
+      "gen_tokens": 256,
+      "samples": 3,
+      "ttft_s": 0.115,
+      "decode_tps_per_stream": 134.8,
+      "decode_tps_aggregate": 405.8,
+      "prefill_tps": 8889.0,
+      "tokens_returned": 768,
+      "errors": []
+    }
+  ]
+}

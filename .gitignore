@@ -1,0 +1,31 @@
+# Model weights — tens of GB, fetched with `hf download` (see USAGE.md)
+models/
+
+# Python env — rebuild with deploy/install.sh
+venv/
+__pycache__/
+*.pyc
+
+# FlashInfer JIT kernel cache (rebuilt on first boot, ~30MB+)
+.flashinfer/
+
+# Server boot logs — machine-specific and noisy, but the memory breakdowns in
+# them are quoted in REPORT.md where they matter
+logs/
+
+# Runtime state
+.think
+
+# Scratch
+*.tmp
+*.bak
+
+# Open WebUI session secret — never commit
+.webui_secret_key
+
+# Unreviewed artifacts left by a research subagent — Open WebUI Tools/Functions
+# that were never installed (tool + function tables are empty). Kept on disk in
+# case they're wanted later, but not shipped: they haven't been read line by line
+# and one agent in that run was flagged for a security issue.
+openwebui/
+scripts/

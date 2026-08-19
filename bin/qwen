@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+# Run Qwen3.8-27B locally, and manage who gets the GPU.
+#
+# STARTING / STOPPING
+#   qwen              start the fast model (llama.cpp, ~153 tok/s, 131K context)
+#   qwen long         start the long-prefill model instead (SGLang, 184K context)
+#   qwen uncfast      uncensored + FAST (Q4_K_S, ~132 tok/s, 131K ctx, ComfyUI fits)
+#   qwen uncensored   uncensored + best fidelity (Q6_K, ~116 tok/s, 98K ctx)
+#   qwen safe         start SGLang leaving ~2GB GPU headroom for other apps
+#   qwen reload       restart the model (picks up config changes)
+#   qwen stop         stop the model ONLY — web UI and ComfyUI keep running
+#   qwen down         stop everything (model + web UI)
+#
+# MAKING ROOM FOR COMFYUI  <- the one you probably want
+#   qwen unload       free ALL model VRAM: stops the LLM *and* tells ComfyUI to
+#                     drop its loaded models. The web UI stays open so you can
+#                     still read/copy the prompt you just generated.
+#   qwen load         bring the model back afterwards (same as `qwen`)
+#   qwen free         only tell ComfyUI to drop its models (LLM untouched)
+#
+# CHECKING
+#   qwen status       what's running
+#   qwen gpu          who is holding VRAM right now
+#   qwen test         verify chat, memory and images work
+#   qwen ui           start the model + the Open WebUI chat page
+#   qwen think off    (SGLang only) disable <think> blocks; `on` to restore
+#
+# TYPICAL COMFYUI SESSION
+#   qwen ui           chat, have it write you an image prompt
+#   qwen unload       frees ~26GB, web UI stays up so you can copy the prompt
+#   ...run your big model in ComfyUI at http://127.0.0.1:8188...
+#   qwen load         model comes back
+#
+# ENDPOINTS (OpenAI-compatible, any API key works)
+#   fast: http://127.0.0.1:30001/v1  model qwen38-fast
+#   long: http://127.0.0.1:30000/v1  model qwen38
+
+set -uo pipefail
+LAB="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+SG_PORT=30000; LC_PORT=30001; UI_PORT=8080; CF_PORT=8188
+STATE="$LAB/.think"
+GGUF="$LAB/models/Qwen3.8-27B-GGUF"
+
+sg_up() { curl -s -m 3 "http://127.0.0.1:$SG_PORT/v1/models" 2>/dev/null | grep -q qwen38; }
+# Matches whichever llama.cpp build is loaded (fast OR uncensored) — checking for
+# one alias made `qwen test`/`status` report "nothing running" for the other.
+lc_model() { curl -s -m 3 "http://127.0.0.1:$LC_PORT/v1/models" 2>/dev/null \
+             | grep -oE '"id"[^,]*' | grep -oE 'qwen38[a-z0-9._-]*' | head -1; }
+lc_up()    { [ -n "$(lc_model)" ]; }
+ui_up() { curl -s -m 3 "http://127.0.0.1:$UI_PORT/" >/dev/null 2>&1; }
+cf_up() { curl -s -m 3 "http://127.0.0.1:$CF_PORT/system_stats" >/dev/null 2>&1; }
+vram()  { nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader; }
+
+warm() {
+  printf 'warming up... '
+  curl -s -m 300 -o /dev/null "http://127.0.0.1:$1/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$2\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":32}"
+  echo done
+}
+
+# Stop only the inference servers. Never touches the web UI or ComfyUI — losing
+# the chat window every time you need VRAM is exactly the wrong behaviour.
+stop_models() {
+  local stopped=0
+  pkill -x llama-server 2>/dev/null && { echo "  stopped llama.cpp"; stopped=1; }
+  pkill -f 'sglang.launch_serve[r]' 2>/dev/null && { echo "  stopped SGLang"; stopped=1; }
+  [ "$stopped" = 0 ] && echo "  no model was running"
+  # llama.cpp releases VRAM on exit but not instantly.
+  for _ in $(seq 1 15); do lc_up || sg_up || break; sleep 1; done
+  sleep 2
+}
+
+# ComfyUI keeps models resident after a generation. This asks it to let go
+# without killing the server, so the web UI and queue survive.
+free_comfy() {
+  if ! cf_up; then echo "  ComfyUI isn't running"; return 0; fi
+  curl -s -m 20 -o /dev/null -X POST "http://127.0.0.1:$CF_PORT/free" \
+    -H 'Content-Type: application/json' \
+    -d '{"unload_models":true,"free_memory":true}' \
+    && echo "  ComfyUI released its models" || echo "  ComfyUI didn't respond to /free"
+  sleep 2
+}
+
+start_fast() {
+  lc_up && { echo "a model is already on port $LC_PORT ($(lc_model)) — 'qwen stop' first"; return 0; }
+  [ -f "$GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf" ] || {
+    echo "missing $GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf" >&2; return 1; }
+  echo "starting Qwen3.8-27B  [fast: llama.cpp Q3_K_XL + MTP speculation]"
+  mkdir -p "$LAB/logs"
+  set_think_args
+  # -fa on is REQUIRED for quantized KV. --spec-type draft-mtp uses the
+  # quantized MTP head inside this GGUF (0.21 GB) — that is why speculation is
+  # a 2.4x win here and was a loss in SGLang, where the head is 5.53 GB bf16.
+  setsid nohup llama-server \
+    -m "$GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf" --mmproj "$GGUF/mmproj-BF16.gguf" \
+    -ngl 999 -fa on -np 1 --no-context-shift \
+    -c 131072 --cache-type-k q4_0 --cache-type-v q4_0 \
+    -b 4096 -ub 2048 -cram -1 --cache-reuse 256 \
+    --spec-type draft-mtp --spec-draft-n-max 2 "${THINK_ARGS[@]}" \
+    --alias qwen38-fast --host 127.0.0.1 --port "$LC_PORT" \
+    > "$LAB/logs/fast.log" 2>&1 < /dev/null & disown
+  for i in $(seq 1 120); do
+    lc_up && { warm "$LC_PORT" qwen38-fast
+               echo "ready -> http://127.0.0.1:$LC_PORT/v1   (model: qwen38-fast)"
+               echo "context: 131072 tokens   |   $(vram)"; return 0; }
+    pgrep -x llama-server >/dev/null || {
+      echo "FAILED to start; last errors:" >&2
+      grep -iE "error|failed|unknown|invalid" "$LAB/logs/fast.log" | tail -5 >&2; return 1; }
+    sleep 4
+  done
+  echo "timed out; see $LAB/logs/fast.log" >&2; return 1
+}
+
+# --- thinking control (llama.cpp builds) -------------------------------------
+# MEASURED on this box with the bill-splitting problem, thinking words:
+#   off  0w  |  <N> ~69w at budget 128  |  low 227w  |  on 271w  |  long 435w
+# Note "long" maps to the template's reasoning_effort=medium, which injects NO
+# instruction at all — so the model rambles MORE than when told to think
+# carefully. The template's names are misleading; these follow measured behaviour.
+THINK_ARGS=()
+set_think_args() {
+  local t; t="$(cat "$STATE" 2>/dev/null || echo on)"
+  THINK_ARGS=()
+  case "$t" in
+    off)      THINK_ARGS=(--reasoning off) ;;
+    low)      THINK_ARGS=(--chat-template-kwargs '{"reasoning_effort":"low"}') ;;
+    long)     THINK_ARGS=(--chat-template-kwargs '{"reasoning_effort":"medium"}') ;;
+    on|xhigh) THINK_ARGS=() ;;                      # template default
+    *) if [[ "$t" =~ ^[0-9]+$ ]]; then
+         THINK_ARGS=(--reasoning-budget "$t")       # hard token cap
+       fi ;;
+  esac
+}
+
+start_unc_fast() {
+  lc_up && { echo "a model is already on port $LC_PORT ($(lc_model)) — 'qwen stop' first"; return 0; }
+  local W="/home/ausboss/.lmstudio/models/mradermacher/Qwen3.8-27B-Uncensored-Aggressive-GGUF/Qwen3.8-27B-Uncensored-Aggressive.Q4_K_S.gguf"
+  local MM="$LAB/models/Qwen3.8-27B-Uncensored/Qwen3.8-27B-Uncensored-vision-f16.gguf"
+  [ -f "$W" ] || { echo "missing weights: $W" >&2; return 1; }
+  echo "starting Qwen3.8-27B Uncensored  [fast: Q4_K_S + MTP speculation]"
+  mkdir -p "$LAB/logs"
+  local MMARG=(); [ -f "$MM" ] && MMARG=(--mmproj "$MM")
+  set_think_args
+  # 15.8GB of weights leaves room for the full 131K KV pool AND ~7GB spare, so
+  # unlike the Q6_K build this one coexists with ComfyUI image generation.
+  setsid nohup llama-server -m "$W" "${MMARG[@]}" \
+    -ngl 999 -fa on -np 1 --no-context-shift \
+    -c 131072 --cache-type-k q4_0 --cache-type-v q4_0 \
+    -b 4096 -ub 2048 -cram -1 --cache-reuse 256 \
+    --spec-type draft-mtp --spec-draft-n-max 2 "${THINK_ARGS[@]}" \
+    --alias qwen38-unc-fast --host 127.0.0.1 --port "$LC_PORT" \
+    > "$LAB/logs/uncfast.log" 2>&1 < /dev/null & disown
+  for i in $(seq 1 120); do
+    lc_up && { warm "$LC_PORT" qwen38-unc-fast
+      echo "ready -> http://127.0.0.1:$LC_PORT/v1   (model: qwen38-unc-fast)"
+      echo "context: 131072 tokens   |   $(vram)"; return 0; }
+    pgrep -x llama-server >/dev/null || {
+      echo "FAILED to start; last errors:" >&2
+      grep -iE "error|failed|alloc" "$LAB/logs/uncfast.log" | tail -5 >&2; return 1; }
+    sleep 4
+  done
+  echo "timed out; see $LAB/logs/uncfast.log" >&2; return 1
+}
+
+start_uncensored() {
+  lc_up && { echo "a model is already on port $LC_PORT ($(lc_model)) — 'qwen stop' first"; return 0; }
+  local D="$LAB/models/Qwen3.8-27B-Uncensored"
+  local W="/home/ausboss/.lmstudio/models/JonathanColetti/Qwen3.8-27B-Uncensored-GGUF/Qwen3.8-27B-Uncensored-Q6_K.gguf"
+  local MM="$D/Qwen3.8-27B-Uncensored-vision-f16.gguf"
+  [ -f "$W" ]  || { echo "missing weights: $W" >&2; return 1; }
+  echo "starting Qwen3.8-27B Uncensored  [Q6_K abliterated, MTP intact]"
+  echo "note: 22.4GB of weights — leaves ~4GB, not enough for ComfyUI image gen."
+  echo "      run 'qwen free' before generating, or use 'qwen' (Q3_K_XL) instead."
+  mkdir -p "$LAB/logs"
+  local MMARG=()
+  [ -f "$MM" ] && MMARG=(--mmproj "$MM") || echo "      (no vision projector yet — text only)"
+  set_think_args
+  # Same flags as the fast model. Q6_K carries its own MTP head (blk.64,
+  # nextn_predict_layers=1, verified with bin/gguf-inspect.py), so speculation
+  # works here too. Context trimmed to 98304: at 131072 the KV pool plus 22.4GB
+  # of weights does not leave room for the graph.
+  setsid nohup llama-server -m "$W" "${MMARG[@]}" \
+    -ngl 999 -fa on -np 1 --no-context-shift \
+    -c 98304 --cache-type-k q4_0 --cache-type-v q4_0 \
+    -b 4096 -ub 2048 -cram -1 --cache-reuse 256 \
+    --spec-type draft-mtp --spec-draft-n-max 2 "${THINK_ARGS[@]}" \
+    --alias qwen38-uncensored --host 127.0.0.1 --port "$LC_PORT" \
+    > "$LAB/logs/uncensored.log" 2>&1 < /dev/null & disown
+  for i in $(seq 1 150); do
+    curl -s -m 3 "http://127.0.0.1:$LC_PORT/v1/models" 2>/dev/null | grep -q qwen38-uncensored && {
+      warm "$LC_PORT" qwen38-uncensored
+      echo "ready -> http://127.0.0.1:$LC_PORT/v1   (model: qwen38-uncensored)"
+      echo "context: 98304 tokens   |   $(vram)"; return 0; }
+    pgrep -x llama-server >/dev/null || {
+      echo "FAILED to start; last errors:" >&2
+      grep -iE "error|failed|unable|alloc" "$LAB/logs/uncensored.log" | tail -5 >&2; return 1; }
+    sleep 4
+  done
+  echo "timed out; see $LAB/logs/uncensored.log" >&2; return 1
+}
+
+start_sglang() {
+  local cfg="$1"
+  sg_up && { echo "SGLang already running on port $SG_PORT"; return 0; }
+  local think; think="$(cat "$STATE" 2>/dev/null || echo medium)"
+  echo "starting Qwen3.8-27B  [$cfg: SGLang NVFP4, thinking: $think]"
+  mkdir -p "$LAB/logs"
+  THINK="$think" setsid nohup "$LAB/bin/serve.sh" "$cfg" "$SG_PORT" \
+    > "$LAB/logs/$cfg.log" 2>&1 < /dev/null & disown
+  for i in $(seq 1 150); do
+    sg_up && { warm "$SG_PORT" qwen38
+               echo "ready -> http://127.0.0.1:$SG_PORT/v1   (model: qwen38)"
+               grep -hoE "#tokens: [0-9]+" "$LAB/logs/$cfg.log" | tail -1 \
+                 | sed 's/#tokens:/context:/;s/$/ tokens/'; return 0; }
+    pgrep -f 'sglang.launch_serve[r]' >/dev/null || {
+      echo "FAILED; last errors:" >&2
+      grep -iE "error|not enough|OutOfMemory|ValueError" "$LAB/logs/$cfg.log" \
+        | grep -v server_args | tail -5 >&2; return 1; }
+    sleep 4
+  done
+  echo "timed out; see $LAB/logs/$cfg.log" >&2; return 1
+}
+
+case "${1:-fast}" in
+  ""|fast|start|load) start_fast ;;
+  uncfast|uf)         start_unc_fast ;;
+  uncensored|unc)     start_uncensored ;;
+  long)               start_sglang vision ;;
+  safe)               start_sglang safe ;;
+
+  reload)
+    echo "reloading model..."
+    stop_models
+    if [ -f "$STATE.sglang" ]; then start_sglang vision; else start_fast; fi ;;
+
+  # --- the ComfyUI workflow -------------------------------------------------
+  unload)
+    echo "freeing GPU for ComfyUI..."
+    stop_models
+    free_comfy
+    echo
+    echo "GPU now: $(vram)"
+    ui_up && echo "web UI still up -> http://127.0.0.1:$UI_PORT (your chat is intact)"
+    cf_up && echo "ComfyUI still up -> http://127.0.0.1:$CF_PORT"
+    echo
+    echo "bring the model back with:  qwen load" ;;
+
+  free)
+    echo "asking ComfyUI to release its models..."
+    free_comfy
+    echo "GPU now: $(vram)" ;;
+
+  # --- stopping --------------------------------------------------------------
+  stop)
+    stop_models
+    echo "GPU now: $(vram)"
+    ui_up && echo "(web UI left running — use 'qwen down' to stop that too)" ;;
+
+  down)
+    stop_models
+    pgrep -f 'open[-_]webui' >/dev/null && { pkill -f 'open[-_]webui'; echo "  stopped web UI"; }
+    echo "GPU now: $(vram)"
+    cf_up && echo "(ComfyUI still running — it's managed separately)" ;;
+
+  # --- inspection ------------------------------------------------------------
+  gpu)
+    echo "GPU: $(vram)"
+    echo
+    printf '%-10s %-10s %s\n' USED PID PROCESS
+    nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader \
+      | awk -F', ' '{n=$3; sub(/.*\//,"",n); printf "%-10s %-10s %s\n", $2, $1, substr(n,1,42)}'
+    echo
+    lc_up && echo "  llama.cpp holds ~20GB while loaded  (free it: qwen unload)"
+    cf_up && echo "  ComfyUI caches models after generating (free it: qwen free)" ;;
+
+  status)
+    if lc_up; then echo "model:   UP    http://127.0.0.1:$LC_PORT/v1  ($(lc_model))"
+    else echo "model:   DOWN  (run: qwen  |  qwen uncensored)"; fi
+    sg_up && echo "long:    UP    http://127.0.0.1:$SG_PORT/v1  (qwen38)" \
+          || echo "long:    DOWN  (run: qwen long)"
+    ui_up && echo "webui:   UP    http://127.0.0.1:$UI_PORT" || echo "webui:   DOWN  (run: qwen ui)"
+    cf_up && echo "comfyui: UP    http://127.0.0.1:$CF_PORT" || echo "comfyui: DOWN  (start it yourself)"
+    echo "GPU:     $(vram)" ;;
+
+  ui)
+    if ! lc_up && ! sg_up; then start_fast || exit 1; fi
+    if ui_up; then echo "Open WebUI already running -> http://127.0.0.1:$UI_PORT"
+    else
+      echo "starting Open WebUI..."
+      setsid nohup open-webui serve --port "$UI_PORT" \
+        > "$LAB/logs/webui.log" 2>&1 < /dev/null & disown
+      for i in $(seq 1 90); do ui_up && break; sleep 2; done
+    fi
+    echo "Open WebUI -> http://127.0.0.1:$UI_PORT"
+    command -v xdg-open >/dev/null && xdg-open "http://127.0.0.1:$UI_PORT" >/dev/null 2>&1 & ;;
+
+  think)
+    lvl="${2:-}"
+    case "$lvl" in
+      off|low|on|long|xhigh) ;;
+      ''|*[!0-9]*)
+        cat <<'EOT'
+usage: qwen think <level>     (restarts the running model to apply)
+
+  off        no <think> block at all                    ~0 words
+  <number>   hard cap, e.g. `qwen think 128`            ~69 words at 128
+  low        told to keep thinking brief                ~227 words
+  on         default                                    ~271 words
+  long       no guidance — rambles MOST, despite name   ~435 words
+
+Word counts measured on this machine with a multi-step word problem.
+"long" maps to the template's reasoning_effort=medium, which injects no
+instruction at all, so it thinks longer than the "think carefully" default.
+
+Per-request instead of restarting (works on the llama.cpp builds):
+  "chat_template_kwargs": {"reasoning_effort": "low"}
+  "chat_template_kwargs": {"enable_thinking": false}
+EOT
+        exit 2 ;;
+    esac
+    echo "$lvl" > "$STATE"
+    echo "thinking set to '$lvl'"
+    if lc_up; then
+      cur="$(lc_model)"; echo "restarting $cur to apply..."
+      stop_models
+      case "$cur" in
+        qwen38-unc-fast)   start_unc_fast ;;
+        qwen38-uncensored) start_uncensored ;;
+        *)                 start_fast ;;
+      esac
+    elif sg_up; then
+      echo "restarting SGLang to apply..."; stop_models; start_sglang vision
+    fi ;;
+
+  test)
+    if lc_up;   then "$LAB/venv/bin/python" "$LAB/bin/smoke.py" --base-url "http://127.0.0.1:$LC_PORT/v1" --model "$(lc_model)"
+    elif sg_up; then "$LAB/venv/bin/python" "$LAB/bin/smoke.py" --base-url "http://127.0.0.1:$SG_PORT/v1" --model qwen38
+    else echo "nothing running — run: qwen"; exit 1; fi ;;
+
+  -h|--help|help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "unknown command: $1"; echo; sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
