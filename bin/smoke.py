@@ -14,6 +14,8 @@ import sys
 import time
 import urllib.request
 
+import labauth
+
 _ap = argparse.ArgumentParser()
 _ap.add_argument("--base-url", default="http://127.0.0.1:30000/v1")
 _ap.add_argument("--model", default="qwen38")
@@ -28,7 +30,7 @@ def call(messages, max_tokens=800, **extra):
             "temperature": 0.3, **extra}
     req = urllib.request.Request(
         f"{BASE}/chat/completions", data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"})
+        headers=labauth.headers())
     t0 = time.perf_counter()
     d = json.loads(urllib.request.urlopen(req, timeout=600).read())
     msg = d["choices"][0]["message"]

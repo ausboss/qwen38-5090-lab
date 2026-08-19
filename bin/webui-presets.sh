@@ -20,23 +20,34 @@ set -uo pipefail
 UI=${UI:-http://127.0.0.1:8080}
 LAB="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 
+# The router requires a bearer token now that it listens on 0.0.0.0.
+API_KEY="${LAB_API_KEY:-$(cat "$LAB/configs/secrets/api-key.txt" 2>/dev/null || true)}"
+AUTH=(); [ -n "$API_KEY" ] && AUTH=(-H "Authorization: Bearer $API_KEY")
+
 # --- pick the base model -----------------------------------------------------
 # A preset whose base model isn't being served shows as unavailable in the
-# picker, so default to whatever is actually up rather than a hardcoded guess.
+# picker. Under llama-swap that is a much weaker constraint than it used to be:
+# /v1/models lists every configured build whether or not it is resident, so any
+# id here stays valid forever and presets no longer break when you switch builds.
+# Ask the router rather than testing for hardcoded names — an earlier version of
+# this function knew only qwen38-fast and qwen38 and went blind the moment the
+# uncensored builds were added.
 detect_model() {
-  if curl -s -m 3 http://127.0.0.1:30001/v1/models 2>/dev/null | grep -q qwen38-fast; then
-    echo qwen38-fast
-  elif curl -s -m 3 http://127.0.0.1:30000/v1/models 2>/dev/null | grep -q qwen38; then
-    echo qwen38
-  else
-    echo ""
+  local ids
+  ids="$(curl -s -m 5 "${AUTH[@]}" http://127.0.0.1:30001/v1/models 2>/dev/null \
+        | python3 -c 'import sys,json;print("\n".join(m["id"] for m in json.load(sys.stdin)["data"]))' 2>/dev/null)"
+  if [ -n "$ids" ]; then
+    grep -qx qwen38-fast <<<"$ids" && { echo qwen38-fast; return; }
+    head -1 <<<"$ids"; return
   fi
+  curl -s -m 3 http://127.0.0.1:30000/v1/models 2>/dev/null | grep -q qwen38 && echo qwen38 || echo ""
 }
 MODEL="${MODEL:-$(detect_model)}"
 if [ -z "$MODEL" ]; then
-  echo "No local model server is running. Start one first:" >&2
-  echo "    qwen          # fast (llama.cpp)" >&2
-  echo "    qwen long     # SGLang" >&2
+  echo "Couldn't reach a model endpoint." >&2
+  echo "    systemctl --user start llama-swap    # the router (usually already up)" >&2
+  echo "    qwen list                            # what it offers" >&2
+  echo "    qwen long                            # SGLang instead" >&2
   exit 1
 fi
 
@@ -152,6 +163,9 @@ these appear alongside the raw models, exactly like LM Studio's preset list.
   remove      : bin/webui-presets.sh --delete
   see current : bin/webui-presets.sh --list
 
-All six point at "$MODEL". If you switch servers (qwen <-> qwen long), rerun
-this so they follow, or edit each preset's base model in the UI.
+All six point at "$MODEL", which llama-swap lists permanently — so switching
+builds no longer breaks them. To hang a preset off a different build (say the
+uncensored one), edit its base model in Workspace → Models, or:
+
+  MODEL=qwen38-uncfast bin/webui-presets.sh
 EOF

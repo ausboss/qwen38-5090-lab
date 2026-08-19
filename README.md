@@ -9,8 +9,10 @@ else entirely. The measurements are the point; the numbers below were taken on
 this machine, not copied from model cards.
 
 ```bash
-qwen            # start it
-qwen ui         # start it + the chat page
+qwen            # load the default build
+qwen list       # every build the endpoint offers
+qwen ui         # open the chat page
+qwen net        # URLs + API key for other machines
 qwen status     # what's running
 ```
 
@@ -20,12 +22,21 @@ New here? Read **[USAGE.md](USAGE.md)** — it's the plain-English guide.
 
 ## What's running
 
-| build | decode @1K | @100K | context | notes |
+All four sit behind [llama-swap](configs/llama-swap.yaml) on one
+OpenAI-compatible endpoint. `GET /v1/models` lists every one of them, and asking
+for a build that isn't loaded swaps to it in ~6s.
+
+| model id | decode @1K | @100K | context | notes |
 |---|---|---|---|---|
-| `qwen` | **153 tok/s** | 80 | 131K | Q3_K_XL + MTP, the default |
-| `qwen uncfast` | 132 | — | 131K | uncensored, leaves room for ComfyUI |
-| `qwen uncensored` | 116 | — | 98K | uncensored, best fidelity |
-| `qwen long` | 65 | 55 | 184K | SGLang NVFP4, 2× faster cold prefill |
+| `qwen38-fast` | **153 tok/s** | 80 | 131K | Q3_K_XL + MTP, the default |
+| `qwen38-uncfast` | 132 | — | 131K | uncensored, leaves room for ComfyUI |
+| `qwen38-uncensored` | 116 | — | 98K | uncensored, best fidelity |
+| `qwen38-brief` | 153 | — | 65K | same weights, thinking capped at 128 tokens |
+| `qwen long` (SGLang) | 65 | 55 | 184K | separate server, 2× faster cold prefill |
+
+The endpoint answers on localhost, the LAN, and Tailscale, and requires a bearer
+token — `qwen net` prints both. Both services run as systemd user units with
+lingering enabled, so they come back after a reboot without a login.
 
 All are vision-capable. All verified with `bin/needle.py` (long-context recall)
 and a reasoning probe, not just "it booted".
@@ -68,6 +79,11 @@ bin/gguf-inspect.py      does a GGUF have an MTP head? predicted tok/s
 bin/webui-configure.py   apply the whole Open WebUI config
 bin/webui-typecheck.py   catch wrong-shaped config values before they break the UI
 bin/webui-presets.sh     create the Open WebUI model presets
+bin/net-setup.sh         put the endpoint on the network, with an API key
+bin/firewall-setup.sh    optional ufw rules (dry-run by default)
+bin/backup-logs.sh       archive the journald logs for both services
+bin/labauth.py           shared bearer-token helper for the Python tools
+configs/llama-swap.yaml  the four builds and their flags
 configs/                 ComfyUI Z-Image workflow used for image generation
 results/                 raw benchmark + needle JSON for every config tested
 USAGE.md                 plain-English guide
@@ -75,7 +91,10 @@ REPORT.md                measurements and reasoning
 NOTES.md                 verified memory model + failure modes
 ```
 
-`models/`, `venv/` and `logs/` are gitignored — they're tens of GB and machine-specific.
+`models/`, `venv/` and `logs/` are gitignored — they're tens of GB and
+machine-specific. So is `configs/secrets/`, which holds the API key; the model
+definitions in `configs/llama-swap.yaml` stay tracked, and llama-swap merges the
+two with `--config-dir`.
 
 ## Reproducing
 

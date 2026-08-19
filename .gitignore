@@ -23,6 +23,11 @@ logs/
 # Open WebUI session secret — never commit
 .webui_secret_key
 
+# API key for the llama-swap endpoint. Kept in its own file so that
+# configs/llama-swap.yaml (the interesting part — the model definitions) can
+# stay tracked. llama-swap merges both via --config-dir; see bin/net-setup.sh.
+configs/secrets/
+
 # Unreviewed artifacts left by a research subagent — Open WebUI Tools/Functions
 # that were never installed (tool + function tables are empty). Kept on disk in
 # case they're wanted later, but not shipped: they haven't been read line by line

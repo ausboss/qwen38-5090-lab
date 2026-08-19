@@ -1,0 +1,37 @@
+[Unit]
+Description=llama-swap — OpenAI-compatible router for local Qwen builds
+Documentation=https://github.com/ausboss/qwen38-5090-lab
+After=network-online.target
+
+[Service]
+Type=simple
+# nvcc/ninja live outside the default systemd PATH; llama-server needs them if a
+# kernel ever has to be rebuilt.
+Environment=PATH=/home/ausboss/.local/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CUDA_HOME=/usr/local/cuda
+# Refuse to start if the API key file is missing or malformed. Without this the
+# failure is silent and fail-OPEN: llama-swap treats an empty --config-dir as
+# "no apiKeys configured", starts happily, and serves the GPU to the whole
+# network on 0.0.0.0 with no warning in the log. Verified. Since this unit binds
+# all interfaces, not starting is the correct outcome. Fix with bin/net-setup.sh.
+ExecStartPre=/bin/sh -c 'grep -q "^apiKeys:" /home/ausboss/Documents/sglang-qwen3.8-lab/configs/secrets/auth.yaml'
+
+# Listens on all interfaces so the endpoint works over LAN and Tailscale.
+# --config-dir merges configs/secrets/auth.yaml, which holds apiKeys and is
+# gitignored; without it the endpoint would be open to every device on the wifi.
+# Note the *children* (llama-server) still bind 127.0.0.1 — see the macro in
+# llama-swap.yaml. Only the router is reachable from off-box, which is what we
+# want: one door, and it needs a key.
+ExecStart=/home/ausboss/.local/bin/llama-swap \
+  --config /home/ausboss/Documents/sglang-qwen3.8-lab/configs/llama-swap.yaml \
+  --config-dir /home/ausboss/Documents/sglang-qwen3.8-lab/configs/secrets \
+  --listen 0.0.0.0:30001
+Restart=on-failure
+RestartSec=5
+# llama-swap spawns llama-server children; make sure they die with it rather
+# than being orphaned holding 20GB of VRAM.
+KillMode=control-group
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

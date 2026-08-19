@@ -25,6 +25,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import labauth
+
 LAB = Path(__file__).resolve().parent.parent
 MODEL_DIR = LAB / "models" / "Qwen3.8-27B-NVFP4"
 
@@ -82,7 +84,7 @@ def one_request(base_url, model, prompt, gen_tokens, timeout=1800, nonce=None):
     req = urllib.request.Request(
         f"{base_url}/chat/completions",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=labauth.headers(),
     )
     t0 = time.perf_counter()
     ttft = None

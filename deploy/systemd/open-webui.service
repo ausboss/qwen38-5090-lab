@@ -1,0 +1,20 @@
+[Unit]
+Description=Open WebUI — local chat frontend
+After=network-online.target llama-swap.service
+Wants=llama-swap.service
+
+[Service]
+Type=simple
+Environment=PATH=/home/ausboss/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/home/ausboss/Documents/sglang-qwen3.8-lab
+ExecStart=/home/ausboss/.local/bin/open-webui serve --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+# Open WebUI double-forks under uvicorn; the default KillMode left an orphan
+# holding :8080 after a daemon-reload, which put this unit in a restart loop
+# that burned ~11s CPU every 10s. control-group kills the whole tree.
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

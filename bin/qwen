@@ -26,15 +26,22 @@
 #   qwen ui              open the chat page
 #   qwen think           how to change reasoning depth (explains; see below)
 #
+# NETWORK
+#   qwen net             every URL this box answers on, plus the API key
+#   qwen key             print the API key alone (for scripts)
+#
 # TYPICAL COMFYUI SESSION
 #   chat in the web UI, have it write an image prompt
 #   qwen unload          frees ~26GB, chat stays open so you can copy the prompt
 #   ...run your big model in ComfyUI at http://127.0.0.1:8188...
 #   qwen                 model comes back
 #
-# ENDPOINT (OpenAI-compatible, any API key works)
-#   http://127.0.0.1:30001/v1     — /v1/models lists every build
-#   http://127.0.0.1:30000/v1     — SGLang, when running
+# ENDPOINT (OpenAI-compatible)
+#   http://<this-box>:30001/v1    — /v1/models lists every build
+#   Reachable from LAN and Tailscale. Requires a bearer token: the router
+#   listens on 0.0.0.0, so it is NOT "any API key works" any more — it 401s
+#   without the real one. `qwen net` prints it.
+#   http://127.0.0.1:30000/v1     — SGLang, loopback only, no auth
 
 set -uo pipefail
 LAB="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -42,17 +49,29 @@ SG_PORT=30000; LC_PORT=30001; UI_PORT=8080; CF_PORT=8188
 DEFAULT_MODEL=qwen38-fast
 STATE="$LAB/.think"
 
+# --- auth ---------------------------------------------------------------------
+# The router listens on 0.0.0.0 so it works over LAN and Tailscale, so it needs a
+# key (configs/secrets/auth.yaml, gitignored). If the file is missing we send no
+# Authorization header at all rather than an empty one — llama-swap accepts a
+# missing key when no apiKeys are configured, but rejects a wrong one.
+API_KEY="${LAB_API_KEY:-$(cat "$LAB/configs/secrets/api-key.txt" 2>/dev/null || true)}"
+AUTH=(); [ -n "$API_KEY" ] && AUTH=(-H "Authorization: Bearer $API_KEY")
+
 # --- llama-swap ---------------------------------------------------------------
 # /v1/models lists everything, /running says what is resident, /unload frees the
 # VRAM without stopping the router (so the model list stays valid for presets).
 sw_up()      { curl -s -m 3 "http://127.0.0.1:$LC_PORT/health" >/dev/null 2>&1; }
-sw_list()    { curl -s -m 5 "http://127.0.0.1:$LC_PORT/v1/models" 2>/dev/null \
+sw_list()    { curl -s -m 5 "${AUTH[@]}" "http://127.0.0.1:$LC_PORT/v1/models" 2>/dev/null \
                | python3 -c 'import sys,json;print("\n".join(m["id"] for m in json.load(sys.stdin)["data"]))' 2>/dev/null; }
-sw_running() { curl -s -m 5 "http://127.0.0.1:$LC_PORT/running" 2>/dev/null \
+sw_running() { curl -s -m 5 "${AUTH[@]}" "http://127.0.0.1:$LC_PORT/running" 2>/dev/null \
                | python3 -c 'import sys,json;r=json.load(sys.stdin).get("running",[]);print(r[0].get("model","") if r else "")' 2>/dev/null; }
-sw_unload()  { curl -s -m 60 -o /dev/null "http://127.0.0.1:$LC_PORT/unload" 2>/dev/null; }
+sw_unload()  { curl -s -m 60 -o /dev/null "${AUTH[@]}" "http://127.0.0.1:$LC_PORT/unload" 2>/dev/null; }
 
-sg_up()  { curl -s -m 3 "http://127.0.0.1:$SG_PORT/v1/models" 2>/dev/null | grep -q qwen38; }
+lan_ip()  { ip -o -4 addr show scope global 2>/dev/null \
+            | awk '$2!~/^(tailscale|tun|docker|br-|veth)/{split($4,a,"/");print a[1];exit}'; }
+ts_ip()   { tailscale ip -4 2>/dev/null | head -1; }
+
+sg_up()  { curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$SG_PORT/v1/models" 2>/dev/null | grep -q qwen38; }
 ui_up()  { curl -s -m 3 "http://127.0.0.1:$UI_PORT/" >/dev/null 2>&1; }
 cf_up()  { curl -s -m 3 "http://127.0.0.1:$CF_PORT/system_stats" >/dev/null 2>&1; }
 vram()   { nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader; }
@@ -78,7 +97,7 @@ load_model() {
   printf 'loading %s... ' "$m"
   # A normal completion is what triggers the load; llama-swap blocks until the
   # server is healthy, so this doubles as the warmup that hides first-token lag.
-  curl -s -m 900 -o /dev/null "http://127.0.0.1:$LC_PORT/v1/chat/completions" \
+  curl -s -m 900 -o /dev/null "${AUTH[@]}" "http://127.0.0.1:$LC_PORT/v1/chat/completions" \
     -H 'Content-Type: application/json' \
     -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":16}"
   if [ "$(sw_running)" = "$m" ]; then
@@ -219,6 +238,39 @@ configs/llama-swap.yaml and change --reasoning-budget, then:
 EOT
     ;;
 
-  -h|--help|help) sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) echo "unknown command: $1"; echo; sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  net)
+    lan="$(lan_ip)"; ts="$(ts_ip)"
+    echo "Endpoint is OpenAI-compatible. Same base URL everywhere, three addresses:"
+    echo
+    printf '  %-11s http://127.0.0.1:%s/v1\n' "this box" "$LC_PORT"
+    [ -n "$lan" ] && printf '  %-11s http://%s:%s/v1\n' "LAN" "$lan" "$LC_PORT"
+    [ -n "$ts"  ] && printf '  %-11s http://%s:%s/v1\n' "Tailscale" "$ts" "$LC_PORT"
+    [ -n "$ts"  ] && printf '  %-11s http://%s:%s/v1   (MagicDNS, survives IP changes)\n' "" "$(hostname -s)" "$LC_PORT"
+    echo
+    if [ -n "$API_KEY" ]; then
+      echo "API key (required — the endpoint 401s without it):"
+      echo "    $API_KEY"
+      echo "  stored in configs/secrets/api-key.txt, gitignored"
+    else
+      echo "!! No API key found and the router listens on all interfaces."
+      echo "   Anyone on your network can use the GPU. Fix: bin/net-setup.sh"
+    fi
+    echo
+    echo "Web UI:"
+    printf '  %-11s http://127.0.0.1:%s\n' "this box" "$UI_PORT"
+    [ -n "$lan" ] && printf '  %-11s http://%s:%s\n' "LAN" "$lan" "$UI_PORT"
+    [ -n "$ts"  ] && printf '  %-11s http://%s:%s\n' "Tailscale" "$ts" "$UI_PORT"
+    echo "  (has its own login; the API key does not apply to it)"
+    echo
+    echo "Quick check from another machine:"
+    echo "  curl -H 'Authorization: Bearer \$KEY' http://${ts:-$lan}:$LC_PORT/v1/models"
+    echo
+    echo "SGLang on $SG_PORT stays loopback-only. To reach it remotely, tunnel:"
+    echo "  ssh -N -L $SG_PORT:127.0.0.1:$SG_PORT $(whoami)@${ts:-$lan}" ;;
+
+  key)
+    [ -n "$API_KEY" ] && echo "$API_KEY" || { echo "no key set" >&2; exit 1; } ;;
+
+  -h|--help|help) sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "unknown command: $1"; echo; sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

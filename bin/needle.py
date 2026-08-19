@@ -21,6 +21,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import labauth
+
 LAB = Path(__file__).resolve().parent.parent
 MODEL_DIR = LAB / "models" / "Qwen3.8-27B-NVFP4"
 
@@ -76,7 +78,7 @@ def ask(base_url, model, prompt, timeout=1800):
     req = urllib.request.Request(
         f"{base_url}/chat/completions",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=labauth.headers(),
     )
     t0 = time.perf_counter()
     with urllib.request.urlopen(req, timeout=timeout) as resp:
