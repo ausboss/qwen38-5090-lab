@@ -82,8 +82,10 @@ bin/webui-presets.sh     create the Open WebUI model presets
 bin/net-setup.sh         put the endpoint on the network, with an API key
 bin/firewall-setup.sh    optional ufw rules (dry-run by default)
 bin/backup-logs.sh       archive the journald logs for both services
+bin/check-docs.sh        catch docs that drifted away from the code
 bin/labauth.py           shared bearer-token helper for the Python tools
 configs/llama-swap.yaml  the four builds and their flags
+skills/qwen38-local/     the agent skill — symlinked into ~/.claude and ~/.pi
 configs/                 ComfyUI Z-Image workflow used for image generation
 results/                 raw benchmark + needle JSON for every config tested
 USAGE.md                 plain-English guide
@@ -95,6 +97,26 @@ NOTES.md                 verified memory model + failure modes
 machine-specific. So is `configs/secrets/`, which holds the API key; the model
 definitions in `configs/llama-swap.yaml` stay tracked, and llama-swap merges the
 two with `--config-dir`.
+
+### The skill has one home
+
+`skills/qwen38-local/` is the **only** copy. Both agents reach it by symlink:
+
+```
+~/.claude/skills/qwen38-local     -> $LAB/skills/qwen38-local
+~/.pi/agent/skills/qwen38-local   -> $LAB/skills/qwen38-local
+```
+
+It used to be two hand-maintained copies under different names, and they drifted:
+one lost the effective-bandwidth figure entirely, and both kept documenting five
+`qwen` subcommands that a rewrite had deleted. Editing either copy left the other
+wrong, silently. Now there is one file, in git, and `bin/check-docs.sh` fails if
+a symlink is replaced by a real directory or a doc references a command that
+doesn't exist.
+
+```bash
+bin/check-docs.sh
+```
 
 ## Reproducing
 
