@@ -1,0 +1,69 @@
+# llama-swap: one OpenAI-compatible endpoint that lists every local build and
+# loads the one you pick, unloading whatever was there first.
+#
+#   endpoint : http://127.0.0.1:30001/v1
+#   GET /v1/models now lists ALL of these, not just the loaded one.
+#
+# This is what makes Open WebUI presets stable: a preset binds to a model id
+# that always exists in the list, even when that build isn't currently resident.
+# Previously each build served a different alias, so switching builds silently
+# broke every preset.
+#
+# Only one model is ever in VRAM — llama-swap stops the running llama-server
+# before starting the next. On a 32GB card that is exactly what you want.
+
+healthCheckTimeout: 600          # Q6_K is 22GB; cold load can take a while
+logLevel: info
+
+macros:
+  # Shared llama-server flags. -fa on is REQUIRED for the quantized KV cache.
+  # --spec-type draft-mtp reads the MTP head out of the same GGUF — that is the
+  # ~2x decode win, and it only works on builds that actually ship the head
+  # (check with bin/gguf-inspect.py before adding a model here).
+  common: >
+    --host 127.0.0.1 --port ${PORT}
+    -ngl 999 -fa on -np 1 --no-context-shift
+    --cache-type-k q4_0 --cache-type-v q4_0
+    -b 4096 -ub 2048 -cram -1 --cache-reuse 256
+    --spec-type draft-mtp --spec-draft-n-max 2
+  lab: /home/ausboss/Documents/sglang-qwen3.8-lab
+  lms: /home/ausboss/.lmstudio/models
+
+models:
+  qwen38-fast:
+    name: "Qwen3.8 27B · Fast (Q3_K_XL)"
+    description: "153 tok/s, 131K context, vision. The default."
+    cmd: >
+      llama-server ${common}
+      -m ${lab}/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf
+      --mmproj ${lab}/models/Qwen3.8-27B-GGUF/mmproj-BF16.gguf
+      -c 131072
+
+  qwen38-uncfast:
+    name: "Qwen3.8 27B · Uncensored Fast (Q4_K_S)"
+    description: "132 tok/s, 131K context, vision. Leaves ~7GB for ComfyUI."
+    cmd: >
+      llama-server ${common}
+      -m ${lms}/mradermacher/Qwen3.8-27B-Uncensored-Aggressive-GGUF/Qwen3.8-27B-Uncensored-Aggressive.Q4_K_S.gguf
+      --mmproj ${lab}/models/Qwen3.8-27B-Uncensored/Qwen3.8-27B-Uncensored-vision-f16.gguf
+      -c 131072
+
+  qwen38-uncensored:
+    name: "Qwen3.8 27B · Uncensored Q6_K"
+    description: "116 tok/s, 98K context, vision. Best fidelity; no room for ComfyUI."
+    cmd: >
+      llama-server ${common}
+      -m ${lms}/JonathanColetti/Qwen3.8-27B-Uncensored-GGUF/Qwen3.8-27B-Uncensored-Q6_K.gguf
+      --mmproj ${lab}/models/Qwen3.8-27B-Uncensored/Qwen3.8-27B-Uncensored-vision-f16.gguf
+      -c 98304
+
+  # Same weights as qwen38-fast but with thinking capped. Handy for chat titles,
+  # tags and quick lookups without restarting anything — pick it in the dropdown.
+  qwen38-brief:
+    name: "Qwen3.8 27B · Brief (capped thinking)"
+    description: "Q3_K_XL with --reasoning-budget 128. ~64% less output."
+    cmd: >
+      llama-server ${common}
+      -m ${lab}/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q3_K_XL.gguf
+      --mmproj ${lab}/models/Qwen3.8-27B-GGUF/mmproj-BF16.gguf
+      -c 65536 --reasoning-budget 128

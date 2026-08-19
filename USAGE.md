@@ -66,6 +66,7 @@ qwen uncensored     # or: qwen unc  — best fidelity, 98K context, no room for 
 | draft acceptance | 0.703 | **0.819** |
 | VRAM left over | **7.4 GB** (ComfyUI fits) | 2.6 GB (it doesn't) |
 | reasoning probe | 8/8 | 8/8 |
+| needle (long-context recall) | **6/6** @32K+100K | 5/6 @32K+90K † |
 | engaged with legit prompts | 6/6 | 6/6 |
 
 **Use `uncfast` by default.** It's faster, has the full context, and leaves room
@@ -73,6 +74,11 @@ for image generation. Reach for `uncensored` (Q6_K) when output quality matters
 more than speed — its higher draft acceptance and quantization fidelity make it
 the better of the two for careful work, which is also what the build's own author
 recommends for behavioural evaluation.
+
+† The one Q6_K miss (90K, position 0.1) returned an empty answer, but re-running
+that exact cell passes with the right code and `finish_reason: stop`. So it is a
+flake, not a depth limit — worth knowing it can happen rather than pretending
+the run was clean.
 
 ### Careful: most uncensored builds are silently broken here
 
@@ -202,6 +208,75 @@ messages = [
     {"role": "user",   "content": "What is the capital of Japan?"},
 ]
 ```
+
+## Logs — where they are, how to back them up, how to turn them off
+
+**llama-swap writes no files of its own.** It has no `--log` flag and holds no
+file descriptors; everything goes to stdout. Because it runs as a systemd user
+service (`StandardOutput=journal`), that means journald:
+
+```bash
+journalctl --user -u llama-swap -f      # live
+journalctl --user -u open-webui -n 100
+```
+
+It also serves an in-memory ring buffer at <http://127.0.0.1:30001/logs> —
+`text/plain`, capped, wiped on restart. Fine for a glance, not a record.
+
+The `llama-server` children inherit llama-swap's stdout, so they land in the
+same journal. `logs/` in this repo only holds older direct-launch runs and
+SGLang boots.
+
+### What's actually in them
+
+Access lines — method, path, status, byte count, duration — plus model
+load/unload and health checks. **No prompt or response content.** Verified by
+grepping the journal for distinctive text from real conversations: zero matches.
+They do reveal *when* you use it and *which* models, so they're not nothing, but
+they aren't transcripts.
+
+### Backing them up
+
+```bash
+bin/backup-logs.sh                              # -> ~/log-backups/<timestamp>/
+bin/backup-logs.sh /mnt/backup --since "7 days ago"
+bin/backup-logs.sh --purge                      # also vacuum journal >7 days old
+```
+
+Gzipped, `chmod 600`, keeps the last 30 archives. It vacuums by *time* via
+`journalctl --vacuum-time` and never deletes journal files by hand — hand
+deletion corrupts the index.
+
+### Turning them down or off
+
+**Quieter, still useful** — in `configs/llama-swap.yaml`:
+
+```yaml
+logLevel: warn      # or error. info is the default and logs every request.
+```
+then `systemctl --user restart llama-swap`.
+
+**Off entirely** — in `~/.config/systemd/user/llama-swap.service`:
+
+```ini
+StandardOutput=null
+StandardError=null
+```
+then `systemctl --user daemon-reload && systemctl --user restart llama-swap`.
+Note this also discards startup errors, so if a model then fails to load you
+get no explanation. `logLevel: warn` is usually the better trade.
+
+**Cap the journal instead** (affects all units, needs root) — in
+`/etc/systemd/journald.conf`:
+
+```ini
+SystemMaxUse=200M
+MaxRetentionSec=2week
+```
+
+Your journal is currently **~920 MB with no limits set**, which is worth capping
+regardless of this project.
+
 
 ## Thinking levels
 

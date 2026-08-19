@@ -1,0 +1,71 @@
+{
+  "label": "uncensored",
+  "passed": 5,
+  "total": 6,
+  "cells": [
+    {
+      "depth": 32768,
+      "position": 0.1,
+      "tokens": 32797,
+      "expected": "962692",
+      "answer_codes": [
+        "962692"
+      ],
+      "pass": true,
+      "latency_s": 14.0
+    },
+    {
+      "depth": 32768,
+      "position": 0.5,
+      "tokens": 32797,
+      "expected": "554292",
+      "answer_codes": [
+        "554292"
+      ],
+      "pass": true,
+      "latency_s": 14.0
+    },
+    {
+      "depth": 32768,
+      "position": 0.9,
+      "tokens": 32797,
+      "expected": "145892",
+      "answer_codes": [
+        "145892"
+      ],
+      "pass": true,
+      "latency_s": 14.3
+    },
+    {
+      "depth": 90000,
+      "position": 0.1,
+      "tokens": 90029,
+      "expected": "582900",
+      "answer_codes": [],
+      "pass": false,
+      "latency_s": 69.1
+    },
+    {
+      "depth": 90000,
+      "position": 0.5,
+      "tokens": 90028,
+      "expected": "174500",
+      "answer_codes": [
+        "174500"
+      ],
+      "pass": true,
+      "latency_s": 48.4
+    },
+    {
+      "depth": 90000,
+      "position": 0.9,
+      "tokens": 90029,
+      "expected": "666100",
+      "answer_codes": [
+        "666100"
+      ],
+      "pass": true,
+      "latency_s": 48.3
+    }
+  ]
+}
